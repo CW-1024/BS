@@ -5,15 +5,13 @@
 // 播放速度配置
 static NSArray *speedOptions = nil;
 static NSInteger currentSpeedIndex = 0;
-static float currentSpeed = 1.0;
 static AWEAwemePlayVideoViewController *currentVideoController = nil;
 
 // 初始化播放速度选项
 void initializeSpeedOptions() {
     if (!speedOptions) {
-        speedOptions = @[@"1.0", @"1.5", @"2.0"];
+        speedOptions = @[@"1.0", @"1.25", @"1.5", @"2.0"];
         currentSpeedIndex = 0;
-        currentSpeed = 1.0;
     }
 }
 
@@ -24,8 +22,9 @@ void initializeSpeedOptions() {
 %hook AWEAwemePlayVideoViewController
 
 - (void)setIsAutoPlay:(BOOL)arg0 {
-    if (currentSpeed > 0 && currentSpeed != 1) {
-        [self setVideoControllerPlaybackRate:currentSpeed];
+    float speed = [speedOptions[currentSpeedIndex] floatValue];
+    if (speed > 0 && speed != 1) {
+        [self setVideoControllerPlaybackRate:speed];
     }
     %orig(arg0);
     currentVideoController = self;
@@ -33,7 +32,6 @@ void initializeSpeedOptions() {
 
 %new
 - (void)adjustPlaybackSpeed:(float)speed {
-    currentSpeed = speed; 
     [self setVideoControllerPlaybackRate:speed];
 }
 
@@ -110,7 +108,8 @@ void initializeSpeedOptions() {
         }
         
         // 更新按钮显示的当前倍速
-        [speedButton setTitle:[NSString stringWithFormat:@"%.1fx", currentSpeed] forState:UIControlStateNormal];
+        NSString *speedFormat = (fmodf(currentSpeed * 100, 10) > 0) ? @"%.2fx" : @"%.1fx";
+        [speedButton setTitle:[NSString stringWithFormat:speedFormat, currentSpeed] forState:UIControlStateNormal];
     }
     
     %orig;
@@ -122,7 +121,7 @@ void initializeSpeedOptions() {
     NSInteger currentSpeedIndex = [[NSUserDefaults standardUserDefaults] integerForKey:speedKey];
     
     // 获取速度配置
-    NSString *speedConfig = [[NSUserDefaults standardUserDefaults] stringForKey:@"SpeedSwitch"] ?: @"1,1.5,2";
+    NSString *speedConfig = [[NSUserDefaults standardUserDefaults] stringForKey:@"SpeedSwitch"] ?: @"1.0,1.25,1.5,2.0";
     NSArray *speeds = [speedConfig componentsSeparatedByString:@","];
     
     if (currentSpeedIndex >= speeds.count || currentSpeedIndex < 0) {
@@ -150,7 +149,7 @@ void initializeSpeedOptions() {
 %new
 - (void)speedButtonTapped:(UIButton *)sender {
     // 获取速度配置
-    NSString *speedConfig = [[NSUserDefaults standardUserDefaults] stringForKey:@"SpeedSwitch"] ?: @"1,1.5,2";
+    NSString *speedConfig = [[NSUserDefaults standardUserDefaults] stringForKey:@"SpeedSwitch"] ?: @"1.0,1.25,1.5,2.0";
     NSArray *speeds = [speedConfig componentsSeparatedByString:@","];
     
     if (speeds.count == 0) return;
@@ -161,7 +160,8 @@ void initializeSpeedOptions() {
     currentSpeedIndex = (currentSpeedIndex + 1) % speedOptions.count;
     [[NSUserDefaults standardUserDefaults] setInteger:currentSpeedIndex forKey:speedKey];
     float newSpeed = [speeds[currentSpeedIndex] floatValue];
-    [sender setTitle:[NSString stringWithFormat:@"%.1fx", newSpeed] forState:UIControlStateNormal];
+    NSString *speedFormat = (fmodf(newSpeed * 100, 10) > 0) ? @"%.2fx" : @"%.1fx";
+    [sender setTitle:[NSString stringWithFormat:speedFormat, newSpeed] forState:UIControlStateNormal];
     
     [[NSUserDefaults standardUserDefaults] synchronize];
     
@@ -172,9 +172,6 @@ void initializeSpeedOptions() {
             sender.transform = CGAffineTransformIdentity;
         }];
     }];
-    
-    // 更新默认速度
-    currentSpeed = newSpeed;
     
     // 查找当前视频控制器并调整速度
     if (currentVideoController) {
@@ -217,7 +214,7 @@ void initializeSpeedOptions() {
     
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (![defaults objectForKey:@"SpeedSwitch"]) {
-        [defaults setObject:@"1.0,1.5,2.0" forKey:@"SpeedSwitch"];
+        [defaults setObject:@"1.0,1.25,1.5,2.0" forKey:@"SpeedSwitch"];
     }
     if (![defaults objectForKey:@"CurrentSpeedIndex"]) {
         [defaults setInteger:0 forKey:@"CurrentSpeedIndex"];
