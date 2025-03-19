@@ -264,10 +264,21 @@ void updateSpeedButtonUI() {
     if (!speedButton) return;
     
     float currentSpeed = getCurrentSpeed();
-    NSInteger currentIndex = getCurrentSpeedIndex(); // 获取当前索引用于显示
-    NSString *speedFormat = (fmodf(currentSpeed * 100, 10) > 0) ? @"%.2fx" : @"%.1fx";
-    [speedButton setTitle:[NSString stringWithFormat:speedFormat, currentSpeed] forState:UIControlStateNormal];
     
+    // 更精确的格式控制
+    NSString *formattedSpeed;
+    if (fmodf(currentSpeed, 1.0) == 0) {
+        // 整数值 (1.0, 2.0) -> "1", "2"
+        formattedSpeed = [NSString stringWithFormat:@"%.0f", currentSpeed];
+    } else if (fmodf(currentSpeed * 10, 1.0) == 0) {
+        // 一位小数 (1.5) -> "1.5"
+        formattedSpeed = [NSString stringWithFormat:@"%.1f", currentSpeed];
+    } else {
+        // 两位小数 (1.25) -> "1.25"
+        formattedSpeed = [NSString stringWithFormat:@"%.2f", currentSpeed];
+    }
+    
+    [speedButton setTitle:formattedSpeed forState:UIControlStateNormal];
 }
 
 @interface AWEAwemePlayVideoViewController (SpeedControl)
@@ -306,7 +317,7 @@ void updateSpeedButtonUI() {
 
     // 添加悬浮速度控制按钮
     if (speedButton == nil) {
-        CGFloat buttonSize = 44;
+        CGFloat buttonSize = 36;
         CGRect screenBounds = [UIScreen mainScreen].bounds;
         CGRect initialFrame = CGRectMake(screenBounds.size.width - buttonSize - 20, 
                                          screenBounds.size.height - buttonSize - 100, 
@@ -404,8 +415,20 @@ void updateSpeedButtonUI() {
     
     float newSpeed = [speeds[newIndex] floatValue];
 
-    NSString *speedFormat = (fmodf(newSpeed * 100, 10) > 0) ? @"%.2fx" : @"%.1fx";
-    [sender setTitle:[NSString stringWithFormat:speedFormat, newSpeed] forState:UIControlStateNormal];
+    // 更精确的格式控制
+    NSString *formattedSpeed;
+    if (fmodf(newSpeed, 1.0) == 0) {
+        // 整数值 (1.0, 2.0) -> "1", "2"
+        formattedSpeed = [NSString stringWithFormat:@"%.0f", newSpeed];
+    } else if (fmodf(newSpeed * 10, 1.0) == 0) {
+        // 一位小数 (1.5) -> "1.5"
+        formattedSpeed = [NSString stringWithFormat:@"%.1f", newSpeed];
+    } else {
+        // 两位小数 (1.25) -> "1.25"
+        formattedSpeed = [NSString stringWithFormat:@"%.2f", newSpeed];
+    }
+    
+    [sender setTitle:formattedSpeed forState:UIControlStateNormal];
     
     // 按钮动画
     [UIView animateWithDuration:0.15 animations:^{
@@ -456,12 +479,12 @@ void updateSpeedButtonUI() {
     
     UIAlertController *alertController = [UIAlertController 
                                          alertControllerWithTitle:@"速度设置" 
-                                         message:@"输入用逗号分隔的倍速值\n（如 0.75,1.0,1.25,1.5,2.0,3.0）"
+                                         message:@"输入用逗号分隔的倍速值\n（如 0.75,1,1.25,1.5,2,3）"
                                          preferredStyle:UIAlertControllerStyleAlert];
     
     [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
         textField.text = currentSpeedConfig;
-        textField.placeholder = @"例如: 0.75,1.0,1.25,1.5,2.0,3.0";
+        textField.placeholder = @"例如: 0.75,1.0,1.25,1.5,2,3";
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
         textField.borderStyle = UITextBorderStyleRoundedRect;
     }];
