@@ -10,9 +10,7 @@
 // 添加函数原型声明
 void showToast(NSString *text);
 
-@interface AWEPlayInteractionViewController : UIViewController
-@property(nonatomic, readonly) UIViewController *parentViewController;
-@property(nonatomic, strong) UIView *view;
+@interface AWEPlayInteractionViewController (SpeedControl)
 - (UIViewController *)firstAvailableUIViewController;
 - (void)speedButtonTapped:(id)sender;
 - (void)buttonTouchDown:(id)sender;
@@ -153,7 +151,67 @@ void showToast(NSString *text);
 
 static AWEAwemePlayVideoViewController *currentVideoController = nil;
 static FloatingSpeedButton *speedButton = nil;
+// 添加一个静态变量来跟踪评论是否正在显示
+static BOOL isCommentViewVisible = NO;
 
+// 添加对评论控制器的 hook
+%hook AWECommentContainerViewController
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    // 当评论界面即将显示时，设置标记为YES并隐藏按钮
+    isCommentViewVisible = YES;
+    if (speedButton) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            speedButton.hidden = YES;
+        });
+    }
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    // 评论界面完全显示后，再次确认按钮隐藏状态
+    isCommentViewVisible = YES;
+    if (speedButton) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            speedButton.hidden = YES;
+        });
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    %orig;
+    // 评论界面开始消失时，仍然保持按钮隐藏状态
+    if (speedButton) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            speedButton.hidden = YES;
+        });
+    }
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    // 评论界面完全消失后，才设置标记为NO并恢复按钮显示
+    isCommentViewVisible = NO;
+    if (speedButton) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            speedButton.hidden = NO;
+        });
+    }
+}
+
+// 处理视图布局完成情况
+- (void)viewDidLayoutSubviews {
+    %orig;
+    // 在视图布局期间，保持按钮隐藏
+    if (speedButton) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            speedButton.hidden = YES;
+        });
+    }
+}
+
+%end
 
 void showToast(NSString *text) {
     [%c(DUXToast) showText:text];
@@ -245,17 +303,7 @@ void updateSpeedButtonUI() {
 
 - (void)viewDidLayoutSubviews {
     %orig;
-    
-    if (![self.parentViewController isKindOfClass:%c(AWEFeedCellViewController)]) {
-        return;
-    }
-    
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
-        CGRect frame = self.view.frame;
-        frame.size.height = self.view.superview.frame.size.height - 83;
-        self.view.frame = frame;
-    }
-    
+
     // 添加悬浮速度控制按钮
     if (speedButton == nil) {
         CGFloat buttonSize = 44;
@@ -272,21 +320,23 @@ void updateSpeedButtonUI() {
         // 设置按钮的控制器引用
         speedButton.interactionController = self;
         
-        float currentSpeed = getCurrentSpeed();
-        NSInteger currentIndex = getCurrentSpeedIndex();
-
         updateSpeedButtonUI();
     }
     
-
+    // 确保按钮总是添加到顶层窗口
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    if (![speedButton isDescendantOfView:keyWindow]) {
+    if (keyWindow && ![speedButton isDescendantOfView:keyWindow]) {
         [keyWindow addSubview:speedButton];
         [speedButton loadSavedPosition]; 
+        
+        // 确保按钮在顶层显示
+        speedButton.layer.zPosition = 999;
     }
     
-
-    speedButton.hidden = NO;
+    // 只在评论不可见时才显示按钮
+    if (speedButton) {
+        speedButton.hidden = isCommentViewVisible;
+    }
     
     if (currentVideoController) {
         [currentVideoController adjustPlaybackSpeed:getCurrentSpeed()];
@@ -304,8 +354,26 @@ void updateSpeedButtonUI() {
     }
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    // 视图出现时检查评论状态
+    if (speedButton) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            speedButton.hidden = isCommentViewVisible;
+            
+            // 确保按钮位于顶层视图
+            UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+            if (keyWindow && ![speedButton isDescendantOfView:keyWindow]) {
+                [keyWindow addSubview:speedButton];
+                [speedButton loadSavedPosition];
+            }
+        });
+    }
+}
+
 - (void)viewWillDisappear:(BOOL)animated {
     %orig;
+    // 临时隐藏按钮，但不移除
     if (speedButton) {
         speedButton.hidden = YES;
     }
@@ -457,6 +525,22 @@ void updateSpeedButtonUI() {
     });
 }
 
+%end
+
+%hook UIWindow
+- (void)makeKeyAndVisible {
+    %orig;
+    
+    // 当窗口变为key window时，根据评论状态决定按钮显示
+    if (speedButton && ![speedButton isDescendantOfView:self]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self addSubview:speedButton];
+            [speedButton loadSavedPosition];
+            speedButton.layer.zPosition = 999;
+            speedButton.hidden = isCommentViewVisible;
+        });
+    }
+}
 %end
 
 %ctor {
