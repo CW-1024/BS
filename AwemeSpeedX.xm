@@ -2,8 +2,157 @@
 #import <objc/runtime.h>
 #import "AwemeHeaders.h"
 
+@class AWEPlayInteractionViewController;
+@class AWEFeedCellViewController;
+@class AWEAwemePlayVideoViewController; 
+@class DUXToast;
+
+// 添加函数原型声明
+void showToast(NSString *text);
+
+@interface AWEPlayInteractionViewController : UIViewController
+@property(nonatomic, readonly) UIViewController *parentViewController;
+@property(nonatomic, strong) UIView *view;
+- (UIViewController *)firstAvailableUIViewController;
+- (void)speedButtonTapped:(id)sender;
+- (void)buttonTouchDown:(id)sender;
+- (void)buttonTouchUp:(id)sender;
+- (void)showSpeedSettingsDialog;
+@end
+
+// 声明悬浮按钮类
+@interface FloatingSpeedButton : UIButton
+@property (nonatomic, assign) CGPoint lastLocation;
+@property (nonatomic, weak) AWEPlayInteractionViewController *interactionController;
+- (void)saveButtonPosition;
+- (void)loadSavedPosition;
+@end
+
+@implementation FloatingSpeedButton
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.accessibilityLabel = @"speedSwitchButton";
+        self.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.2];
+        self.layer.cornerRadius = frame.size.width / 2;
+        self.layer.masksToBounds = YES;
+        self.layer.borderWidth = 1.5;
+        self.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.5].CGColor;
+        
+        [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        self.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+        
+        self.layer.shadowColor = [UIColor blackColor].CGColor;
+        self.layer.shadowOffset = CGSizeMake(0, 2);
+        self.layer.shadowOpacity = 0.5;
+        
+        UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [self addGestureRecognizer:panGesture];
+        
+        UILongPressGestureRecognizer *longPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
+        longPressGesture.minimumPressDuration = 0.8;
+        [self addGestureRecognizer:longPressGesture];
+        
+        longPressGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
+        panGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
+        
+        [self loadSavedPosition];
+    }
+    return self;
+}
+
+// 防止长按手势和点击事件冲突
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    if ([gestureRecognizer isKindOfClass:[UILongPressGestureRecognizer class]]) {
+        return NO; 
+    }
+    return YES;
+}
+
+
+- (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        
+        if (self.interactionController) {
+            [self.interactionController showSpeedSettingsDialog];
+            
+            // 触觉反馈
+            if (@available(iOS 10.0, *)) {
+                UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+                [generator prepare];
+                [generator impactOccurred];
+            }
+            return;
+        }
+        
+        UIResponder *nextResponder = [self nextResponder];
+        while (nextResponder != nil) {
+            if ([nextResponder isKindOfClass:%c(AWEPlayInteractionViewController)]) {
+                AWEPlayInteractionViewController *controller = (AWEPlayInteractionViewController *)nextResponder;
+                [controller showSpeedSettingsDialog];
+                self.interactionController = controller;
+                break;
+            }
+            nextResponder = [nextResponder nextResponder];
+        }
+        
+        if (@available(iOS 10.0, *)) {
+            UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+            [generator prepare];
+            [generator impactOccurred];
+        }
+    }
+}
+
+- (void)handlePan:(UIPanGestureRecognizer *)pan {
+    if (pan.state == UIGestureRecognizerStateBegan) {
+        self.lastLocation = self.center;
+    }
+    
+    CGPoint translation = [pan translationInView:self.superview];
+    CGPoint newCenter = CGPointMake(self.lastLocation.x + translation.x, 
+                                    self.lastLocation.y + translation.y);
+    
+    // 确保按钮不会超出屏幕边界
+    CGFloat halfWidth = self.frame.size.width / 2;
+    CGFloat halfHeight = self.frame.size.height / 2;
+    CGRect superBounds = self.superview.bounds;
+    
+    newCenter.x = MAX(halfWidth, MIN(newCenter.x, superBounds.size.width - halfWidth));
+    newCenter.y = MAX(halfHeight, MIN(newCenter.y, superBounds.size.height - halfHeight));
+    
+    self.center = newCenter;
+    
+    if (pan.state == UIGestureRecognizerStateEnded) {
+        [self saveButtonPosition];
+    }
+}
+
+- (void)saveButtonPosition {
+    if (self.superview) {
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        [defaults setFloat:self.center.x / self.superview.bounds.size.width forKey:@"SpeedButtonCenterXPercent"];
+        [defaults setFloat:self.center.y / self.superview.bounds.size.height forKey:@"SpeedButtonCenterYPercent"];
+        [defaults synchronize];
+    }
+}
+
+- (void)loadSavedPosition {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    float centerXPercent = [defaults floatForKey:@"SpeedButtonCenterXPercent"];
+    float centerYPercent = [defaults floatForKey:@"SpeedButtonCenterYPercent"];
+    
+    if (centerXPercent > 0 && centerYPercent > 0 && self.superview) {
+        self.center = CGPointMake(centerXPercent * self.superview.bounds.size.width,
+                                  centerYPercent * self.superview.bounds.size.height);
+    }
+}
+
+@end
+
 static AWEAwemePlayVideoViewController *currentVideoController = nil;
-static UIButton *speedButton = nil;
+static FloatingSpeedButton *speedButton = nil;
 
 
 void showToast(NSString *text) {
@@ -21,15 +170,11 @@ NSInteger getCurrentSpeedIndex() {
     NSInteger index = [[NSUserDefaults standardUserDefaults] integerForKey:@"CurrentSpeedIndex"];
     NSArray *speeds = getSpeedOptions();
     
-    // 确保索引合法
     if (index >= speeds.count || index < 0) {
         index = 0;
         [[NSUserDefaults standardUserDefaults] setInteger:index forKey:@"CurrentSpeedIndex"];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
-    
-    // 显示当前索引
-    showToast([NSString stringWithFormat:@"获取当前倍速索引: %ld", (long)index]);
     
     return index;
 }
@@ -47,16 +192,13 @@ float getCurrentSpeed() {
 // 设置倍速索引并保存
 void setCurrentSpeedIndex(NSInteger index) {
     NSArray *speeds = getSpeedOptions();
-    
-    // 确保索引合法
+
     if (speeds.count == 0) return;
     index = index % speeds.count;
     
     [[NSUserDefaults standardUserDefaults] setInteger:index forKey:@"CurrentSpeedIndex"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     
-    // 显示设置的索引
-    showToast([NSString stringWithFormat:@"设置新倍速索引: %ld", (long)index]);
 }
 
 // 更新倍速按钮UI
@@ -68,10 +210,6 @@ void updateSpeedButtonUI() {
     NSString *speedFormat = (fmodf(currentSpeed * 100, 10) > 0) ? @"%.2fx" : @"%.1fx";
     [speedButton setTitle:[NSString stringWithFormat:speedFormat, currentSpeed] forState:UIControlStateNormal];
     
-    // 显示当前按钮更新信息
-    showToast([NSString stringWithFormat:@"按钮UI更新 - 索引: %ld, 速度: %@", 
-               (long)currentIndex, 
-               [NSString stringWithFormat:speedFormat, currentSpeed]]);
 }
 
 @interface AWEAwemePlayVideoViewController (SpeedControl)
@@ -81,20 +219,13 @@ void updateSpeedButtonUI() {
 %hook AWEAwemePlayVideoViewController
 
 - (void)setIsAutoPlay:(BOOL)arg0 {
-    // 获取当前保存的倍速设置
     float speed = getCurrentSpeed();
     NSInteger speedIndex = getCurrentSpeedIndex();
     
-    // 应用倍速设置
     [self setVideoControllerPlaybackRate:speed];
     %orig(arg0);
     currentVideoController = self;
     
-    // 显示视频控制器设置信息
-    showToast([NSString stringWithFormat:@"视频控制器设置 - 索引: %ld, 速度: %.2f", 
-               (long)speedIndex, speed]);
-    
-    // 更新按钮UI
     updateSpeedButtonUI();
 }
 
@@ -105,15 +236,6 @@ void updateSpeedButtonUI() {
 
 %end
 
-// 在使用AWEPlayInteractionViewController之前添加类扩展
-@interface AWEPlayInteractionViewController : UIViewController
-@property(nonatomic, readonly) UIViewController *parentViewController;
-@property(nonatomic, strong) UIView *view;
-- (UIViewController *)firstAvailableUIViewController;
-- (void)speedButtonTapped:(id)sender;
-- (void)buttonTouchDown:(id)sender;
-- (void)buttonTouchUp:(id)sender;
-@end
 
 @interface UIView (SpeedHelper)
 - (UIViewController *)firstAvailableUIViewController;
@@ -134,101 +256,58 @@ void updateSpeedButtonUI() {
         self.view.frame = frame;
     }
     
-    // 添加速度控制按钮
-    UIView *containerView = self.view;
-    
-    BOOL buttonExists = NO;
-    
-    for (UIView *subview in containerView.subviews) {
-        if ([subview isKindOfClass:[UIButton class]] && [subview.accessibilityLabel isEqualToString:@"speedSwitchButton"]) {
-            buttonExists = YES;
-            speedButton = (UIButton *)subview;
-            break;
-        }
-    }
-    
-    // 获取右侧控件栈视图
-    UIView *rightStackView = nil;
-    for (UIView *subview in containerView.subviews) {
-        if ([subview isKindOfClass:%c(AWEElementStackView)] && 
-            [subview.accessibilityLabel isEqualToString:@"right"]) {
-            rightStackView = subview;
-            break;
-        }
-    }
-    
-    if (!buttonExists) {
-        // 创建圆形倍速按钮
+    // 添加悬浮速度控制按钮
+    if (speedButton == nil) {
         CGFloat buttonSize = 44;
-        speedButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        speedButton.accessibilityLabel = @"speedSwitchButton";
+        CGRect screenBounds = [UIScreen mainScreen].bounds;
+        CGRect initialFrame = CGRectMake(screenBounds.size.width - buttonSize - 20, 
+                                         screenBounds.size.height - buttonSize - 100, 
+                                         buttonSize, buttonSize);
         
-        speedButton.frame = CGRectMake(0, 0, buttonSize, buttonSize);
-        speedButton.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.2];
-        speedButton.layer.cornerRadius = buttonSize / 2;
-        speedButton.layer.masksToBounds = YES;
-        speedButton.layer.borderWidth = 1.5;
-        speedButton.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.5].CGColor;
-        
-        [speedButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        speedButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-        
-        speedButton.layer.shadowColor = [UIColor blackColor].CGColor;
-        speedButton.layer.shadowOffset = CGSizeMake(0, 2);
-        speedButton.layer.shadowOpacity = 0.5;
-    
-        [containerView addSubview:speedButton];
-        speedButton.translatesAutoresizingMaskIntoConstraints = NO;
-        
-        // 位置在右侧控件栈的上方
-        if (rightStackView) {
-            [NSLayoutConstraint activateConstraints:@[
-                [speedButton.bottomAnchor constraintEqualToAnchor:rightStackView.topAnchor constant:0], 
-                [speedButton.trailingAnchor constraintEqualToAnchor:rightStackView.trailingAnchor constant:-7], 
-                [speedButton.widthAnchor constraintEqualToConstant:buttonSize],
-                [speedButton.heightAnchor constraintEqualToConstant:buttonSize]
-            ]];
-        } else {
-            // 如果没找到右侧控件栈，则默认放在右下角
-            [NSLayoutConstraint activateConstraints:@[
-                [speedButton.bottomAnchor constraintEqualToAnchor:containerView.bottomAnchor constant:-100], 
-                [speedButton.trailingAnchor constraintEqualToAnchor:containerView.trailingAnchor constant:-20], 
-                [speedButton.widthAnchor constraintEqualToConstant:buttonSize],
-                [speedButton.heightAnchor constraintEqualToConstant:buttonSize]
-            ]];
-        }
-        
-        // 获取当前速度并应用到视频上
-        float currentSpeed = getCurrentSpeed();
-        NSInteger currentIndex = getCurrentSpeedIndex();
-        
-        // 显示按钮创建信息
-        showToast([NSString stringWithFormat:@"倍速按钮已创建 - 索引: %ld, 速度: %.2f倍", 
-                   (long)currentIndex, currentSpeed]);
-        
-        // 查找当前视频控制器并调整速度
-        if (currentVideoController) {
-            [currentVideoController adjustPlaybackSpeed:currentSpeed];
-        } else {
-            UIViewController *vc = [self firstAvailableUIViewController];
-            while (vc && ![vc isKindOfClass:%c(AWEAwemePlayVideoViewController)]) {
-                vc = vc.parentViewController;
-            }
-            
-            if ([vc isKindOfClass:%c(AWEAwemePlayVideoViewController)]) {
-                AWEAwemePlayVideoViewController *videoVC = (AWEAwemePlayVideoViewController *)vc;
-                [videoVC adjustPlaybackSpeed:currentSpeed];
-                currentVideoController = videoVC;
-            }
-        }
-        
-        // 更新按钮UI显示
-        updateSpeedButtonUI();
-        
-        // 添加按钮事件
+        speedButton = [[FloatingSpeedButton alloc] initWithFrame:initialFrame];
         [speedButton addTarget:self action:@selector(speedButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
         [speedButton addTarget:self action:@selector(buttonTouchDown:) forControlEvents:UIControlEventTouchDown];
         [speedButton addTarget:self action:@selector(buttonTouchUp:) forControlEvents:UIControlEventTouchCancel | UIControlEventTouchUpOutside];
+        
+        // 设置按钮的控制器引用
+        speedButton.interactionController = self;
+        
+        float currentSpeed = getCurrentSpeed();
+        NSInteger currentIndex = getCurrentSpeedIndex();
+
+        updateSpeedButtonUI();
+    }
+    
+
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    if (![speedButton isDescendantOfView:keyWindow]) {
+        [keyWindow addSubview:speedButton];
+        [speedButton loadSavedPosition]; 
+    }
+    
+
+    speedButton.hidden = NO;
+    
+    if (currentVideoController) {
+        [currentVideoController adjustPlaybackSpeed:getCurrentSpeed()];
+    } else {
+        UIViewController *vc = [self firstAvailableUIViewController];
+        while (vc && ![vc isKindOfClass:%c(AWEAwemePlayVideoViewController)]) {
+            vc = vc.parentViewController;
+        }
+        
+        if ([vc isKindOfClass:%c(AWEAwemePlayVideoViewController)]) {
+            AWEAwemePlayVideoViewController *videoVC = (AWEAwemePlayVideoViewController *)vc;
+            [videoVC adjustPlaybackSpeed:getCurrentSpeed()];
+            currentVideoController = videoVC;
+        }
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    %orig;
+    if (speedButton) {
+        speedButton.hidden = YES;
     }
 }
 
@@ -250,25 +329,15 @@ void updateSpeedButtonUI() {
     NSArray *speeds = getSpeedOptions();
     if (speeds.count == 0) return;
     
-    // 获取并递增倍速索引
     NSInteger currentIndex = getCurrentSpeedIndex();
-    showToast([NSString stringWithFormat:@"当前索引: %ld", (long)currentIndex]);
-    
     NSInteger newIndex = (currentIndex + 1) % speeds.count;
     
-    // 保存新的倍速索引
     setCurrentSpeedIndex(newIndex);
     
-    // 获取新倍速值
     float newSpeed = [speeds[newIndex] floatValue];
-    
-    // 更新UI
+
     NSString *speedFormat = (fmodf(newSpeed * 100, 10) > 0) ? @"%.2fx" : @"%.1fx";
     [sender setTitle:[NSString stringWithFormat:speedFormat, newSpeed] forState:UIControlStateNormal];
-    
-    // 提示用户
-    showToast([NSString stringWithFormat:@"已切换倍速 - 新索引: %ld, 速度: %@x", 
-               (long)newIndex, speeds[newIndex]]);
     
     // 按钮动画
     [UIView animateWithDuration:0.15 animations:^{
@@ -279,7 +348,6 @@ void updateSpeedButtonUI() {
         }];
     }];
     
-    // 应用倍速到视频
     if (currentVideoController) {
         [currentVideoController adjustPlaybackSpeed:newSpeed];
     } else {
@@ -312,6 +380,83 @@ void updateSpeedButtonUI() {
     }];
 }
 
+%new
+- (void)showSpeedSettingsDialog {
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *currentSpeedConfig = [defaults stringForKey:@"SpeedSwitch"] ?: @"1.0,1.25,1.5,2.0";
+    
+    UIAlertController *alertController = [UIAlertController 
+                                         alertControllerWithTitle:@"速度设置" 
+                                         message:@"输入用逗号分隔的倍速值\n（如 0.75,1.0,1.25,1.5,2.0,3.0）"
+                                         preferredStyle:UIAlertControllerStyleAlert];
+    
+    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.text = currentSpeedConfig;
+        textField.placeholder = @"例如: 0.75,1.0,1.25,1.5,2.0,3.0";
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        textField.borderStyle = UITextBorderStyleRoundedRect;
+    }];
+    
+    NSString *authorInfo = @"\n作者: 维他入我心\nTelegram: @vita_app";
+    NSMutableAttributedString *attributedMessage = [[NSMutableAttributedString alloc] 
+                                                   initWithString:[NSString stringWithFormat:@"%@%@", 
+                                                   alertController.message, authorInfo]];
+    [attributedMessage addAttribute:NSFontAttributeName 
+                             value:[UIFont systemFontOfSize:12]
+                             range:NSMakeRange(alertController.message.length, authorInfo.length)];
+    [attributedMessage addAttribute:NSForegroundColorAttributeName 
+                             value:[UIColor grayColor] 
+                             range:NSMakeRange(alertController.message.length, authorInfo.length)];
+    
+    [alertController setValue:attributedMessage forKey:@"attributedMessage"];
+    
+    [alertController addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    
+    [alertController addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        UITextField *textField = alertController.textFields.firstObject;
+        NSString *speedConfig = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        
+        // 验证格式并保存
+        if (speedConfig.length > 0) {
+            NSArray *speedValues = [speedConfig componentsSeparatedByString:@","];
+            BOOL isValid = YES;
+            
+            for (NSString *value in speedValues) {
+                float speed = [value floatValue];
+                if (speed <= 0.0 || value.length == 0) {
+                    isValid = NO;
+                    break;
+                }
+            }
+            
+            if (isValid && speedValues.count > 0) {
+                [defaults setObject:speedConfig forKey:@"SpeedSwitch"];
+                [defaults setInteger:0 forKey:@"CurrentSpeedIndex"]; 
+                [defaults synchronize];
+                
+                updateSpeedButtonUI();
+                showToast(@"速度设置已更新");
+                
+                if (currentVideoController) {
+                    [currentVideoController adjustPlaybackSpeed:getCurrentSpeed()];
+                }
+            } else {
+                showToast(@"格式错误，请输入有效的速度值");
+            }
+        }
+    }]];
+    
+    // 修改对话框显示方式，确保在主线程上执行
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *topVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+        while (topVC.presentedViewController) {
+            topVC = topVC.presentedViewController;
+        }
+        [topVC presentViewController:alertController animated:YES completion:nil];
+    });
+}
+
 %end
 
 %ctor {
@@ -326,8 +471,6 @@ void updateSpeedButtonUI() {
         [defaults setInteger:0 forKey:@"CurrentSpeedIndex"];
     }
     [defaults synchronize];
-    
-    // 显示初始化信息
+ 
     NSInteger initialIndex = getCurrentSpeedIndex();
-    showToast([NSString stringWithFormat:@"插件初始化 - 当前索引: %ld", (long)initialIndex]);
 }
