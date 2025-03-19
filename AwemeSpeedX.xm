@@ -34,13 +34,13 @@ void showToast(NSString *text);
     self = [super initWithFrame:frame];
     if (self) {
         self.accessibilityLabel = @"speedSwitchButton";
-        self.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.2];
+        self.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.1];
         self.layer.cornerRadius = frame.size.width / 2;
         self.layer.masksToBounds = YES;
         self.layer.borderWidth = 1.5;
-        self.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.5].CGColor;
+        self.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.3].CGColor;
         
-        [self setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        [self setTitleColor:[UIColor colorWithWhite:1.0 alpha:0.3] forState:UIControlStateNormal];
         self.titleLabel.font = [UIFont boldSystemFontOfSize:15];
         
         self.layer.shadowColor = [UIColor blackColor].CGColor;
