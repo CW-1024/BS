@@ -27,6 +27,7 @@ void showToast(NSString *text);
 @property (nonatomic, assign) BOOL justToggledLock; // 添加锁定状态切换标记
 - (void)saveButtonPosition;
 - (void)loadSavedPosition;
+- (void)resetButtonState; // 添加方法确保按钮状态可以被重置
 @end
 
 @implementation FloatingSpeedButton
@@ -48,6 +49,9 @@ void showToast(NSString *text);
         self.layer.shadowOffset = CGSizeMake(0, 2);
         self.layer.shadowOpacity = 0.5;
         
+        // 确保用户交互始终启用
+        self.userInteractionEnabled = YES;
+        
         UIPanGestureRecognizer *panGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:panGesture];
         
@@ -68,30 +72,70 @@ void showToast(NSString *text);
         
         // 初始化锁定状态
         self.isLocked = NO;
+        self.justToggledLock = NO;
     }
     return self;
 }
 
-// 防止长按手势和点击事件冲突
+// 改进手势识别器代理方法，优化手势处理
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    if ([gestureRecognizer isKindOfClass:[UILongPressGestureRecognizer class]]) {
+    // 长按和点击不应同时识别
+    if ([gestureRecognizer isKindOfClass:[UILongPressGestureRecognizer class]] && 
+        [otherGestureRecognizer isKindOfClass:[UITapGestureRecognizer class]]) {
         return NO; 
     }
+    
+    // 拖动和点击不应同时识别
+    if (([gestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]] && 
+         [otherGestureRecognizer isKindOfClass:[UITapGestureRecognizer class]]) ||
+        ([otherGestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]] && 
+         [gestureRecognizer isKindOfClass:[UITapGestureRecognizer class]])) {
+        return NO;
+    }
+    
     return YES;
 }
 
+// 确保点击手势的优先级高于其他手势
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    if ([gestureRecognizer isKindOfClass:[UITapGestureRecognizer class]] && 
+        ([otherGestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]] || 
+         [otherGestureRecognizer isKindOfClass:[UILongPressGestureRecognizer class]])) {
+        return YES;
+    }
+    return NO;
+}
+
 - (void)handleSingleTap:(UITapGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateEnded && self.interactionController) {
+    if (gesture.state == UIGestureRecognizerStateEnded) {
         // 如果刚刚切换了锁定状态，不触发点击事件
         if (self.justToggledLock) {
             return;
         }
-        [self.interactionController speedButtonTapped:self];
+        
+        // 提供视觉反馈
+        [UIView animateWithDuration:0.1 animations:^{
+            self.transform = CGAffineTransformMakeScale(1.2, 1.2);
+        } completion:^(BOOL finished) {
+            [UIView animateWithDuration:0.1 animations:^{
+                self.transform = CGAffineTransformIdentity;
+            }];
+        }];
+        
+        // 确保控制器存在再调用方法
+        if (self.interactionController) {
+            [self.interactionController speedButtonTapped:self];
+        }
     }
 }
 
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
+        // 取消可能存在的先前定时器
+        if (self.longPressTimer && [self.longPressTimer isValid]) {
+            [self.longPressTimer invalidate];
+        }
+        
         // 开始长按，设置计时器在0.3秒后触发设置弹窗
         self.longPressTimer = [NSTimer scheduledTimerWithTimeInterval:0.3 
                                                                target:self 
@@ -102,12 +146,13 @@ void showToast(NSString *text);
         // 设置锁定状态切换标记
         self.justToggledLock = YES;
         
-        // 设置定时器在1秒后重置标记
-        [NSTimer scheduledTimerWithTimeInterval:1.0 
+        // 设置定时器在1秒后重置标记，并确保定时器被强引用
+        NSTimer *resetTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
                                         target:self 
                                       selector:@selector(resetToggleLockFlag) 
                                       userInfo:nil 
                                        repeats:NO];
+        [[NSRunLoop mainRunLoop] addTimer:resetTimer forMode:NSRunLoopCommonModes];
         
         // 先执行锁定操作
         self.isLocked = !self.isLocked;
@@ -138,9 +183,25 @@ void showToast(NSString *text);
     }
 }
 
-// 添加新方法用于重置锁定切换标记
+// 重置锁定切换标记的实现改进
 - (void)resetToggleLockFlag {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.justToggledLock = NO;
+    });
+}
+
+// 添加方法确保按钮状态可以被重置
+- (void)resetButtonState {
     self.justToggledLock = NO;
+    self.userInteractionEnabled = YES;
+    self.transform = CGAffineTransformIdentity;
+    self.alpha = 1.0;
+    
+    // 如果有定时器正在运行，取消它们
+    if (self.longPressTimer && [self.longPressTimer isValid]) {
+        [self.longPressTimer invalidate];
+        self.longPressTimer = nil;
+    }
 }
 
 - (void)showSettingsDialog {
@@ -184,6 +245,9 @@ void showToast(NSString *text);
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     // 如果按钮被锁定，不执行拖动
     if (self.isLocked) return;
+    
+    // 拖动时确保 justToggledLock 为 NO，避免影响后续点击
+    self.justToggledLock = NO;
     
     if (pan.state == UIGestureRecognizerStateBegan) {
         self.lastLocation = self.center;
@@ -407,14 +471,19 @@ void updateSpeedButtonUI() {
                                          buttonSize, buttonSize);
         
         speedButton = [[FloatingSpeedButton alloc] initWithFrame:initialFrame];
-        [speedButton addTarget:self action:@selector(speedButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [speedButton addTarget:self action:@selector(buttonTouchDown:) forControlEvents:UIControlEventTouchDown];
-        [speedButton addTarget:self action:@selector(buttonTouchUp:) forControlEvents:UIControlEventTouchCancel | UIControlEventTouchUpOutside];
+        
+        // 移除通过 addTarget 添加的事件，避免与手势识别器冲突
+        // [speedButton addTarget:self action:@selector(speedButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+        // [speedButton addTarget:self action:@selector(buttonTouchDown:) forControlEvents:UIControlEventTouchDown];
+        // [speedButton addTarget:self action:@selector(buttonTouchUp:) forControlEvents:UIControlEventTouchCancel | UIControlEventTouchUpOutside];
         
         // 设置按钮的控制器引用
         speedButton.interactionController = self;
         
         updateSpeedButtonUI();
+    } else {
+        // 在每次布局时重置按钮状态，确保它始终可点击
+        [speedButton resetButtonState];
     }
     
     // 确保按钮总是添加到顶层窗口
