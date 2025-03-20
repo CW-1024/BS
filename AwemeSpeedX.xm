@@ -22,6 +22,9 @@ void showToast(NSString *text);
 @interface FloatingSpeedButton : UIButton
 @property (nonatomic, assign) CGPoint lastLocation;
 @property (nonatomic, weak) AWEPlayInteractionViewController *interactionController;
+@property (nonatomic, assign) BOOL isLocked; // 添加锁定状态属性
+@property (nonatomic, strong) NSTimer *longPressTimer; // 添加长按计时器
+@property (nonatomic, assign) BOOL justToggledLock; // 添加锁定状态切换标记
 - (void)saveButtonPosition;
 - (void)loadSavedPosition;
 @end
@@ -49,13 +52,22 @@ void showToast(NSString *text);
         [self addGestureRecognizer:panGesture];
         
         UILongPressGestureRecognizer *longPressGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
-        longPressGesture.minimumPressDuration = 0.8;
+        longPressGesture.minimumPressDuration = 0.5;
         [self addGestureRecognizer:longPressGesture];
+        
+        // 简化为只有单击手势
+        UITapGestureRecognizer *singleTapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSingleTap:)];
+        singleTapGesture.numberOfTapsRequired = 1;
+        [self addGestureRecognizer:singleTapGesture];
         
         longPressGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
         panGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
+        singleTapGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
         
         [self loadSavedPosition];
+        
+        // 初始化锁定状态
+        self.isLocked = NO;
     }
     return self;
 }
@@ -68,42 +80,111 @@ void showToast(NSString *text);
     return YES;
 }
 
+- (void)handleSingleTap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateEnded && self.interactionController) {
+        // 如果刚刚切换了锁定状态，不触发点击事件
+        if (self.justToggledLock) {
+            return;
+        }
+        [self.interactionController speedButtonTapped:self];
+    }
+}
 
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
+        // 开始长按，设置计时器在0.3秒后触发设置弹窗
+        self.longPressTimer = [NSTimer scheduledTimerWithTimeInterval:0.3 
+                                                               target:self 
+                                                             selector:@selector(showSettingsDialog) 
+                                                             userInfo:nil 
+                                                              repeats:NO];
         
-        if (self.interactionController) {
-            [self.interactionController showSpeedSettingsDialog];
-            
-            // 触觉反馈
-            if (@available(iOS 10.0, *)) {
-                UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-                [generator prepare];
-                [generator impactOccurred];
-            }
-            return;
+        // 设置锁定状态切换标记
+        self.justToggledLock = YES;
+        
+        // 设置定时器在1秒后重置标记
+        [NSTimer scheduledTimerWithTimeInterval:1.0 
+                                        target:self 
+                                      selector:@selector(resetToggleLockFlag) 
+                                      userInfo:nil 
+                                       repeats:NO];
+        
+        // 先执行锁定操作
+        self.isLocked = !self.isLocked;
+        
+        // 显示锁定/解锁提示
+        NSString *toastMessage = self.isLocked ? @"按钮已锁定" : @"按钮已解锁";
+        showToast(toastMessage);
+        
+        // 如果锁定了，保存当前位置
+        if (self.isLocked) {
+            [self saveButtonPosition]; 
         }
         
-        UIResponder *nextResponder = [self nextResponder];
-        while (nextResponder != nil) {
-            if ([nextResponder isKindOfClass:%c(AWEPlayInteractionViewController)]) {
-                AWEPlayInteractionViewController *controller = (AWEPlayInteractionViewController *)nextResponder;
-                [controller showSpeedSettingsDialog];
-                self.interactionController = controller;
-                break;
-            }
-            nextResponder = [nextResponder nextResponder];
+        // 触觉反馈
+        if (@available(iOS 10.0, *)) {
+            UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+            [generator prepare];
+            [generator impactOccurred];
         }
+    } else if (gesture.state == UIGestureRecognizerStateEnded || 
+               gesture.state == UIGestureRecognizerStateCancelled || 
+               gesture.state == UIGestureRecognizerStateFailed) {
+        // 长按手势结束或取消时废弃计时器
+        if (self.longPressTimer && [self.longPressTimer isValid]) {
+            [self.longPressTimer invalidate];
+            self.longPressTimer = nil;
+        }
+    }
+}
+
+// 添加新方法用于重置锁定切换标记
+- (void)resetToggleLockFlag {
+    self.justToggledLock = NO;
+}
+
+- (void)showSettingsDialog {
+    // 取消锁定状态
+    if (self.isLocked) {
+        self.isLocked = NO;
+        showToast(@"按钮已解锁");
+    }
+    
+    // 触发设置弹窗
+    if (self.interactionController) {
+        [self.interactionController showSpeedSettingsDialog];
         
+        // 触觉反馈
         if (@available(iOS 10.0, *)) {
             UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             [generator prepare];
             [generator impactOccurred];
         }
+        return;
+    }
+    
+    UIResponder *nextResponder = [self nextResponder];
+    while (nextResponder != nil) {
+        if ([nextResponder isKindOfClass:%c(AWEPlayInteractionViewController)]) {
+            AWEPlayInteractionViewController *controller = (AWEPlayInteractionViewController *)nextResponder;
+            [controller showSpeedSettingsDialog];
+            self.interactionController = controller;
+            break;
+        }
+        nextResponder = [nextResponder nextResponder];
+    }
+    
+    if (@available(iOS 10.0, *)) {
+        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+        [generator prepare];
+        [generator impactOccurred];
     }
 }
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
+    // 如果按钮被锁定，不执行拖动
+    if (self.isLocked) return;
+    
     if (pan.state == UIGestureRecognizerStateBegan) {
         self.lastLocation = self.center;
     }
@@ -112,13 +193,14 @@ void showToast(NSString *text);
     CGPoint newCenter = CGPointMake(self.lastLocation.x + translation.x, 
                                     self.lastLocation.y + translation.y);
     
-    // 确保按钮不会超出屏幕边界
+    // 确保按钮不会超出屏幕边界，并且不会移动到底部导航栏区域
     CGFloat halfWidth = self.frame.size.width / 2;
     CGFloat halfHeight = self.frame.size.height / 2;
     CGRect superBounds = self.superview.bounds;
+    CGFloat bottomSafeArea = 20.0; // 设置底部安全区域
     
     newCenter.x = MAX(halfWidth, MIN(newCenter.x, superBounds.size.width - halfWidth));
-    newCenter.y = MAX(halfHeight, MIN(newCenter.y, superBounds.size.height - halfHeight));
+    newCenter.y = MAX(halfHeight, MIN(newCenter.y, superBounds.size.height - halfHeight - bottomSafeArea));
     
     self.center = newCenter;
     
@@ -319,8 +401,9 @@ void updateSpeedButtonUI() {
     if (speedButton == nil) {
         CGFloat buttonSize = 36;
         CGRect screenBounds = [UIScreen mainScreen].bounds;
-        CGRect initialFrame = CGRectMake(screenBounds.size.width - buttonSize - 20, 
-                                         screenBounds.size.height - buttonSize - 100, 
+        // 修改初始位置为屏幕中间
+        CGRect initialFrame = CGRectMake((screenBounds.size.width - buttonSize) / 2, 
+                                         (screenBounds.size.height - buttonSize) / 2, 
                                          buttonSize, buttonSize);
         
         speedButton = [[FloatingSpeedButton alloc] initWithFrame:initialFrame];
