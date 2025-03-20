@@ -1,8 +1,8 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "AwemeHeaders.h"
+#import "SpeedXSettingViewController.h" // 导入自定义设置视图控制器
 
-@class AWEPlayInteractionViewController;
 @class AWEFeedCellViewController;
 @class AWEAwemePlayVideoViewController; 
 @class DUXToast;
@@ -10,7 +10,14 @@
 // 添加函数原型声明
 void showToast(NSString *text);
 
-@interface AWEPlayInteractionViewController (SpeedControl)
+// 完善AWEPlayInteractionViewController类定义，包括所有需要的属性和方法
+@interface AWEPlayInteractionViewController : UIViewController
+@property (nonatomic, strong, readonly) UIView *view; // 修改为readonly，因为它是从UIViewController继承的
+// 添加必要的方法声明
+- (void)setVideoControllerPlaybackRate:(float)rate; // 添加播放速率设置方法
+@end
+
+@interface AWEPlayInteractionViewController (SpeedControl) <SpeedXSettingViewControllerDelegate>
 - (UIViewController *)firstAvailableUIViewController;
 - (void)speedButtonTapped:(id)sender;
 - (void)buttonTouchDown:(id)sender;
@@ -299,6 +306,10 @@ static AWEAwemePlayVideoViewController *currentVideoController = nil;
 static FloatingSpeedButton *speedButton = nil;
 // 添加一个静态变量来跟踪评论是否正在显示
 static BOOL isCommentViewVisible = NO;
+// 添加变量用于控制是否在速度后面显示"x"
+static BOOL showSpeedX = NO;
+// 添加按钮大小变量
+static CGFloat speedButtonSize = 36.0;
 
 // 添加对评论控制器的 hook
 %hook AWECommentContainerViewController
@@ -424,6 +435,11 @@ void updateSpeedButtonUI() {
         formattedSpeed = [NSString stringWithFormat:@"%.2f", currentSpeed];
     }
     
+    // 如果需要显示"x"，则添加"x"
+    if (showSpeedX) {
+        formattedSpeed = [formattedSpeed stringByAppendingString:@"x"];
+    }
+    
     [speedButton setTitle:formattedSpeed forState:UIControlStateNormal];
 }
 
@@ -463,27 +479,36 @@ void updateSpeedButtonUI() {
 
     // 添加悬浮速度控制按钮
     if (speedButton == nil) {
-        CGFloat buttonSize = 36;
+        // 使用保存的按钮大小或默认值
+        speedButtonSize = [[NSUserDefaults standardUserDefaults] floatForKey:@"SpeedButtonSize"] ?: 36.0;
+        
         CGRect screenBounds = [UIScreen mainScreen].bounds;
         // 修改初始位置为屏幕中间
-        CGRect initialFrame = CGRectMake((screenBounds.size.width - buttonSize) / 2, 
-                                         (screenBounds.size.height - buttonSize) / 2, 
-                                         buttonSize, buttonSize);
+        CGRect initialFrame = CGRectMake((screenBounds.size.width - speedButtonSize) / 2, 
+                                         (screenBounds.size.height - speedButtonSize) / 2, 
+                                         speedButtonSize, speedButtonSize);
         
         speedButton = [[FloatingSpeedButton alloc] initWithFrame:initialFrame];
         
-        // 移除通过 addTarget 添加的事件，避免与手势识别器冲突
-        // [speedButton addTarget:self action:@selector(speedButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-        // [speedButton addTarget:self action:@selector(buttonTouchDown:) forControlEvents:UIControlEventTouchDown];
-        // [speedButton addTarget:self action:@selector(buttonTouchUp:) forControlEvents:UIControlEventTouchCancel | UIControlEventTouchUpOutside];
-        
         // 设置按钮的控制器引用
         speedButton.interactionController = self;
+        
+        // 加载"显示x"的设置
+        showSpeedX = [[NSUserDefaults standardUserDefaults] boolForKey:@"SpeedShowX"];
         
         updateSpeedButtonUI();
     } else {
         // 在每次布局时重置按钮状态，确保它始终可点击
         [speedButton resetButtonState];
+        
+        // 更新按钮大小如果有变化
+        if (speedButton.frame.size.width != speedButtonSize) {
+            CGPoint center = speedButton.center;
+            CGRect newFrame = CGRectMake(0, 0, speedButtonSize, speedButtonSize);
+            speedButton.frame = newFrame;
+            speedButton.center = center;
+            speedButton.layer.cornerRadius = speedButtonSize / 2;
+        }
     }
     
     // 确保按钮总是添加到顶层窗口
@@ -580,6 +605,11 @@ void updateSpeedButtonUI() {
         formattedSpeed = [NSString stringWithFormat:@"%.2f", newSpeed];
     }
     
+    // 如果需要显示"x"，则添加"x"
+    if (showSpeedX) {
+        formattedSpeed = [formattedSpeed stringByAppendingString:@"x"];
+    }
+    
     [sender setTitle:formattedSpeed forState:UIControlStateNormal];
     
     // 按钮动画
@@ -625,79 +655,58 @@ void updateSpeedButtonUI() {
 
 %new
 - (void)showSpeedSettingsDialog {
+    // 获取当前配置
+    NSString *currentSpeedConfig = [[NSUserDefaults standardUserDefaults] stringForKey:@"SpeedSwitch"] ?: @"1.0,1.25,1.5,2.0";
+    BOOL currentShowX = [[NSUserDefaults standardUserDefaults] boolForKey:@"SpeedShowX"];
+    
+    // 创建设置视图控制器
+    SpeedXSettingViewController *settingsVC = [[SpeedXSettingViewController alloc] initWithSpeedConfig:currentSpeedConfig 
+                                                                                               showX:currentShowX];
+    settingsVC.delegate = self;
+    
+    // 显示设置视图控制器
+    UIViewController *topVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (topVC.presentedViewController) {
+        topVC = topVC.presentedViewController;
+    }
+    
+    [settingsVC presentInViewController:topVC];
+}
 
+%new
+- (void)settingsDidUpdateWithSpeedConfig:(NSString *)speedConfig showX:(BOOL)showX buttonSize:(CGFloat)buttonSize {
+    // 保存设置
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *currentSpeedConfig = [defaults stringForKey:@"SpeedSwitch"] ?: @"1.0,1.25,1.5,2.0";
+    [defaults setObject:speedConfig forKey:@"SpeedSwitch"];
+    [defaults setBool:showX forKey:@"SpeedShowX"];
+    [defaults setFloat:buttonSize forKey:@"SpeedButtonSize"];
+    [defaults setInteger:0 forKey:@"CurrentSpeedIndex"]; 
+    [defaults synchronize];
     
-    UIAlertController *alertController = [UIAlertController 
-                                         alertControllerWithTitle:@"速度设置" 
-                                         message:@"输入用逗号分隔的倍速值\n（如 0.75,1,1.25,1.5,2,3）"
-                                         preferredStyle:UIAlertControllerStyleAlert];
+    // 更新全局变量
+    showSpeedX = showX;
+    speedButtonSize = buttonSize;
     
-    [alertController addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.text = currentSpeedConfig;
-        textField.placeholder = @"例如: 0.75,1.0,1.25,1.5,2,3";
-        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
-        textField.borderStyle = UITextBorderStyleRoundedRect;
-    }];
-    
-    NSString *authorInfo = @"\n作者: 维他入我心\nTelegram: @vita_app";
-    NSMutableAttributedString *attributedMessage = [[NSMutableAttributedString alloc] 
-                                                   initWithString:[NSString stringWithFormat:@"%@%@", 
-                                                   alertController.message, authorInfo]];
-    [attributedMessage addAttribute:NSFontAttributeName 
-                             value:[UIFont systemFontOfSize:12]
-                             range:NSMakeRange(alertController.message.length, authorInfo.length)];
-    [attributedMessage addAttribute:NSForegroundColorAttributeName 
-                             value:[UIColor grayColor] 
-                             range:NSMakeRange(alertController.message.length, authorInfo.length)];
-    
-    [alertController setValue:attributedMessage forKey:@"attributedMessage"];
-    
-    [alertController addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    
-    [alertController addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        UITextField *textField = alertController.textFields.firstObject;
-        NSString *speedConfig = [textField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    // 更新按钮UI
+    if (speedButton) {
+        // 更新按钮大小
+        CGPoint center = speedButton.center;
+        CGRect newFrame = CGRectMake(0, 0, buttonSize, buttonSize);
+        speedButton.frame = newFrame;
+        speedButton.center = center;
+        speedButton.layer.cornerRadius = buttonSize / 2;
         
-        // 验证格式并保存
-        if (speedConfig.length > 0) {
-            NSArray *speedValues = [speedConfig componentsSeparatedByString:@","];
-            BOOL isValid = YES;
-            
-            for (NSString *value in speedValues) {
-                float speed = [value floatValue];
-                if (speed <= 0.0 || value.length == 0) {
-                    isValid = NO;
-                    break;
-                }
-            }
-            
-            if (isValid && speedValues.count > 0) {
-                [defaults setObject:speedConfig forKey:@"SpeedSwitch"];
-                [defaults setInteger:0 forKey:@"CurrentSpeedIndex"]; 
-                [defaults synchronize];
-                
-                updateSpeedButtonUI();
-                showToast(@"速度设置已更新");
-                
-                if (currentVideoController) {
-                    [currentVideoController adjustPlaybackSpeed:getCurrentSpeed()];
-                }
-            } else {
-                showToast(@"格式错误，请输入有效的速度值");
-            }
-        }
-    }]];
+        // 更新按钮文本
+        updateSpeedButtonUI();
+    }
     
-    // 修改对话框显示方式，确保在主线程上执行
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *topVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-        while (topVC.presentedViewController) {
-            topVC = topVC.presentedViewController;
-        }
-        [topVC presentViewController:alertController animated:YES completion:nil];
-    });
+    // 应用新的播放速度
+    if (currentVideoController) {
+        [currentVideoController adjustPlaybackSpeed:getCurrentSpeed()];
+    }
+    
+    // 显示确认消息
+    showToast(@"速度设置已更新");
 }
 
 %end
@@ -729,6 +738,13 @@ void updateSpeedButtonUI() {
     if (![defaults objectForKey:@"CurrentSpeedIndex"]) {
         [defaults setInteger:0 forKey:@"CurrentSpeedIndex"];
     }
+    if (![defaults objectForKey:@"SpeedButtonSize"]) {
+        [defaults setFloat:36.0 forKey:@"SpeedButtonSize"];
+    }
+    // 读取全局设置
+    showSpeedX = [defaults boolForKey:@"SpeedShowX"];
+    speedButtonSize = [defaults floatForKey:@"SpeedButtonSize"] ?: 36.0;
+    
     [defaults synchronize];
  
     NSInteger initialIndex = getCurrentSpeedIndex();

@@ -16,7 +16,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = AwemeSpeedX
 
-AwemeSpeedX_FILES = AwemeSpeedX.xm
+AwemeSpeedX_FILES = AwemeSpeedX.xm SpeedXSettingViewController.m
 AwemeSpeedX_CFLAGS = -fobjc-arc -w
 CXXFLAGS += -std=c++11
 CCFLAGS += -std=c++11
