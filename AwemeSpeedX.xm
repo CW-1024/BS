@@ -30,8 +30,10 @@ void showToast(NSString *text);
 @property (nonatomic, assign) CGPoint lastLocation;
 @property (nonatomic, weak) AWEPlayInteractionViewController *interactionController;
 @property (nonatomic, assign) BOOL isLocked; // 添加锁定状态属性
-@property (nonatomic, strong) NSTimer *longPressTimer; // 添加长按计时器
+@property (nonatomic, strong) NSTimer *firstStageTimer; // 第一阶段计时器
+@property (nonatomic, strong) NSTimer *secondStageTimer; // 第二阶段计时器
 @property (nonatomic, assign) BOOL justToggledLock; // 添加锁定状态切换标记
+@property (nonatomic, assign) BOOL originalLockState; // 保存原始锁定状态
 - (void)saveButtonPosition;
 - (void)loadSavedPosition;
 - (void)resetButtonState; // 添加方法确保按钮状态可以被重置
@@ -75,10 +77,10 @@ void showToast(NSString *text);
         panGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
         singleTapGesture.delegate = (id<UIGestureRecognizerDelegate>)self;
         
+        // 加载保存的位置和锁定状态
         [self loadSavedPosition];
         
-        // 初始化锁定状态
-        self.isLocked = NO;
+        // justToggledLock总是初始化为NO
         self.justToggledLock = NO;
     }
     return self;
@@ -139,58 +141,97 @@ void showToast(NSString *text);
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
         // 取消可能存在的先前定时器
-        if (self.longPressTimer && [self.longPressTimer isValid]) {
-            [self.longPressTimer invalidate];
+        if (self.firstStageTimer && [self.firstStageTimer isValid]) {
+            [self.firstStageTimer invalidate];
+        }
+        if (self.secondStageTimer && [self.secondStageTimer isValid]) {
+            [self.secondStageTimer invalidate];
         }
         
-        // 开始长按，设置计时器在0.3秒后触发设置弹窗
-        self.longPressTimer = [NSTimer scheduledTimerWithTimeInterval:0.3 
+        // 保存原始锁定状态
+        self.originalLockState = self.isLocked;
+        
+        // 第一阶段定时器 - 0.5秒后切换锁定状态
+        self.firstStageTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 
                                                                target:self 
-                                                             selector:@selector(showSettingsDialog) 
+                                                             selector:@selector(firstStageLongPress) 
                                                              userInfo:nil 
                                                               repeats:NO];
+        [[NSRunLoop mainRunLoop] addTimer:self.firstStageTimer forMode:NSRunLoopCommonModes];
         
-        // 设置锁定状态切换标记
-        self.justToggledLock = YES;
-        
-        // 设置定时器在1秒后重置标记，并确保定时器被强引用
-        NSTimer *resetTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
-                                        target:self 
-                                      selector:@selector(resetToggleLockFlag) 
-                                      userInfo:nil 
-                                       repeats:NO];
-        [[NSRunLoop mainRunLoop] addTimer:resetTimer forMode:NSRunLoopCommonModes];
-        
-        // 先执行锁定操作
-        self.isLocked = !self.isLocked;
-        
-        // 显示锁定/解锁提示
-        NSString *toastMessage = self.isLocked ? @"按钮已锁定" : @"按钮已解锁";
-        showToast(toastMessage);
-        
-        // 如果锁定了，保存当前位置
-        if (self.isLocked) {
-            [self saveButtonPosition]; 
-        }
-        
-        // 触觉反馈
-        if (@available(iOS 10.0, *)) {
-            UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
-            [generator prepare];
-            [generator impactOccurred];
-        }
+        // 第二阶段定时器 - 1.0秒后(0.5+0.5)显示设置弹窗并恢复原始锁定状态
+        self.secondStageTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
+                                                                target:self 
+                                                              selector:@selector(secondStageLongPress) 
+                                                              userInfo:nil 
+                                                               repeats:NO];
+        [[NSRunLoop mainRunLoop] addTimer:self.secondStageTimer forMode:NSRunLoopCommonModes];
     } else if (gesture.state == UIGestureRecognizerStateEnded || 
                gesture.state == UIGestureRecognizerStateCancelled || 
                gesture.state == UIGestureRecognizerStateFailed) {
         // 长按手势结束或取消时废弃计时器
-        if (self.longPressTimer && [self.longPressTimer isValid]) {
-            [self.longPressTimer invalidate];
-            self.longPressTimer = nil;
+        if (self.firstStageTimer && [self.firstStageTimer isValid]) {
+            [self.firstStageTimer invalidate];
+            self.firstStageTimer = nil;
+        }
+        if (self.secondStageTimer && [self.secondStageTimer isValid]) {
+            [self.secondStageTimer invalidate];
+            self.secondStageTimer = nil;
         }
     }
 }
 
-// 重置锁定切换标记的实现改进
+- (void)firstStageLongPress {
+    // 切换锁定状态
+    self.isLocked = !self.isLocked;
+    self.justToggledLock = YES;
+    
+    // 显示锁定/解锁提示
+    NSString *toastMessage = self.isLocked ? @"按钮已锁定" : @"按钮已解锁";
+    showToast(toastMessage);
+    
+    // 如果锁定了，保存当前位置
+    if (self.isLocked) {
+        [self saveButtonPosition];
+    }
+    
+    // 触觉反馈
+    if (@available(iOS 10.0, *)) {
+        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+        [generator prepare];
+        [generator impactOccurred];
+    }
+    
+    // 设置定时器在1秒后重置标记
+    NSTimer *resetTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
+                                    target:self 
+                                  selector:@selector(resetToggleLockFlag) 
+                                  userInfo:nil 
+                                   repeats:NO];
+    [[NSRunLoop mainRunLoop] addTimer:resetTimer forMode:NSRunLoopCommonModes];
+}
+
+- (void)secondStageLongPress {
+    // 恢复原始锁定状态
+    if (self.isLocked != self.originalLockState) {
+        self.isLocked = self.originalLockState;
+        NSString *toastMessage = self.isLocked ? @"保持锁定状态" : @"保持解锁状态";
+        showToast(toastMessage);
+    }
+    
+    // 显示设置弹窗
+    if (self.interactionController) {
+        [self.interactionController showSpeedSettingsDialog];
+        
+        // 触觉反馈
+        if (@available(iOS 10.0, *)) {
+            UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+            [generator prepare];
+            [generator impactOccurred];
+        }
+    }
+}
+
 - (void)resetToggleLockFlag {
     dispatch_async(dispatch_get_main_queue(), ^{
         self.justToggledLock = NO;
@@ -205,47 +246,13 @@ void showToast(NSString *text);
     self.alpha = 1.0;
     
     // 如果有定时器正在运行，取消它们
-    if (self.longPressTimer && [self.longPressTimer isValid]) {
-        [self.longPressTimer invalidate];
-        self.longPressTimer = nil;
+    if (self.firstStageTimer && [self.firstStageTimer isValid]) {
+        [self.firstStageTimer invalidate];
+        self.firstStageTimer = nil;
     }
-}
-
-- (void)showSettingsDialog {
-    // 取消锁定状态
-    if (self.isLocked) {
-        self.isLocked = NO;
-        showToast(@"按钮已解锁");
-    }
-    
-    // 触发设置弹窗
-    if (self.interactionController) {
-        [self.interactionController showSpeedSettingsDialog];
-        
-        // 触觉反馈
-        if (@available(iOS 10.0, *)) {
-            UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-            [generator prepare];
-            [generator impactOccurred];
-        }
-        return;
-    }
-    
-    UIResponder *nextResponder = [self nextResponder];
-    while (nextResponder != nil) {
-        if ([nextResponder isKindOfClass:%c(AWEPlayInteractionViewController)]) {
-            AWEPlayInteractionViewController *controller = (AWEPlayInteractionViewController *)nextResponder;
-            [controller showSpeedSettingsDialog];
-            self.interactionController = controller;
-            break;
-        }
-        nextResponder = [nextResponder nextResponder];
-    }
-    
-    if (@available(iOS 10.0, *)) {
-        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-        [generator prepare];
-        [generator impactOccurred];
+    if (self.secondStageTimer && [self.secondStageTimer isValid]) {
+        [self.secondStageTimer invalidate];
+        self.secondStageTimer = nil;
     }
 }
 
@@ -285,6 +292,8 @@ void showToast(NSString *text);
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         [defaults setFloat:self.center.x / self.superview.bounds.size.width forKey:@"SpeedButtonCenterXPercent"];
         [defaults setFloat:self.center.y / self.superview.bounds.size.height forKey:@"SpeedButtonCenterYPercent"];
+        // 保存锁定状态
+        [defaults setBool:self.isLocked forKey:@"SpeedButtonLocked"];
         [defaults synchronize];
     }
 }
@@ -293,6 +302,9 @@ void showToast(NSString *text);
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     float centerXPercent = [defaults floatForKey:@"SpeedButtonCenterXPercent"];
     float centerYPercent = [defaults floatForKey:@"SpeedButtonCenterYPercent"];
+    
+    // 加载锁定状态
+    self.isLocked = [defaults boolForKey:@"SpeedButtonLocked"];
     
     if (centerXPercent > 0 && centerYPercent > 0 && self.superview) {
         self.center = CGPointMake(centerXPercent * self.superview.bounds.size.width,
