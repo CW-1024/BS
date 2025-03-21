@@ -55,25 +55,20 @@
 }
 
 - (void)setupContentView {
-    // 创建主内容视图 - 更现代的设计
     _contentView = [[UIView alloc] init];
     // 半透明深灰色背景提供更好的视觉对比
     _contentView.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.85];
-    _contentView.layer.cornerRadius = 24; // 更大的圆角
+    _contentView.layer.cornerRadius = 24;
     _contentView.layer.masksToBounds = YES;
     
-    // 添加微妙的边框和阴影效果
     _contentView.layer.borderWidth = 0.5;
     _contentView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.25].CGColor;
     [self.view addSubview:_contentView];
     
-    // 设置内容视图大小和位置 - 增加高度以适应新控件
     CGFloat contentWidth = MIN(340, self.view.bounds.size.width - 40);
     _contentView.frame = CGRectMake((self.view.bounds.size.width - contentWidth) / 2,
                                   (self.view.bounds.size.height - 400) / 2,
                                   contentWidth, 380);
-    
-    // 添加顶部装饰条 - 现代UI设计元素
     UIView *decorationBar = [[UIView alloc] init];
     decorationBar.backgroundColor = [UIColor colorWithRed:0.0 green:0.8 blue:1.0 alpha:0.9];
     decorationBar.frame = CGRectMake((_contentView.bounds.size.width - 60) / 2, 12, 60, 4);
@@ -105,16 +100,14 @@
                                  _contentView.bounds.size.width - 40, 22);
     [_contentView addSubview:speedLabel];
     
-    // 示例标签 - 更加精致的样式
     UILabel *exampleLabel = [[UILabel alloc] init];
-    exampleLabel.text = @"例如: 0.75,1.0,1.25,1.5,2.0,3.0";
+    exampleLabel.text = @"例如: 0.75,1,1.25,1.5,2,3";
     exampleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightRegular];
     exampleLabel.textColor = [UIColor colorWithRed:0.0 green:0.8 blue:1.0 alpha:0.8];
     exampleLabel.frame = CGRectMake(20, speedLabel.frame.origin.y + speedLabel.frame.size.height + 4,
                                   _contentView.bounds.size.width - 40, 20);
     [_contentView addSubview:exampleLabel];
     
-    // 速度输入框 - 更现代的输入框样式
     _speedTextField = [[UITextField alloc] init];
     _speedTextField.text = self.speedConfig;
     _speedTextField.placeholder = @"输入倍速值";
@@ -134,7 +127,6 @@
                                      _contentView.bounds.size.width - 40, 44);
     [_contentView addSubview:_speedTextField];
     
-    // 开关容器 - 新增设计元素
     UIView *switchContainer = [[UIView alloc] init];
     switchContainer.backgroundColor = [UIColor colorWithWhite:0.18 alpha:1.0];
     switchContainer.layer.cornerRadius = 12;
@@ -142,7 +134,6 @@
                                     _contentView.bounds.size.width - 40, 50);
     [_contentView addSubview:switchContainer];
     
-    // 显示"x"开关标签
     UILabel *switchLabel = [[UILabel alloc] init];
     switchLabel.text = @"显示数字后的 \"x\"";
     switchLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
@@ -151,7 +142,6 @@
                                  switchContainer.bounds.size.width - 80, 30);
     [switchContainer addSubview:switchLabel];
     
-    // 显示"x"开关 - 现代风格
     _showXSwitch = [[UISwitch alloc] init];
     _showXSwitch.on = self.showX;
     _showXSwitch.onTintColor = [UIColor colorWithRed:0.0 green:0.8 blue:1.0 alpha:1.0];
@@ -159,7 +149,6 @@
                                    51, 31);
     [switchContainer addSubview:_showXSwitch];
     
-    // 添加按钮大小容器
     UIView *sizeContainer = [[UIView alloc] init];
     sizeContainer.backgroundColor = [UIColor colorWithWhite:0.18 alpha:1.0];
     sizeContainer.layer.cornerRadius = 12;
@@ -167,7 +156,6 @@
                                   _contentView.bounds.size.width - 40, 70);
     [_contentView addSubview:sizeContainer];
     
-    // 添加按钮大小标签
     UILabel *sizeTitle = [[UILabel alloc] init];
     sizeTitle.text = @"按钮大小";
     sizeTitle.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
@@ -175,7 +163,6 @@
     sizeTitle.frame = CGRectMake(15, 10, sizeContainer.bounds.size.width - 30, 22);
     [sizeContainer addSubview:sizeTitle];
     
-    // 添加按钮大小显示标签
     _buttonSizeLabel = [[UILabel alloc] init];
     _buttonSizeLabel.text = [NSString stringWithFormat:@"%.0f", self.buttonSize];
     _buttonSizeLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
@@ -184,7 +171,6 @@
     _buttonSizeLabel.frame = CGRectMake(sizeContainer.bounds.size.width - 60, 10, 45, 22);
     [sizeContainer addSubview:_buttonSizeLabel];
     
-    // 添加滑块控制按钮大小
     _buttonSizeSlider = [[UISlider alloc] init];
     _buttonSizeSlider.minimumValue = 20.0; // 最小值 20
     _buttonSizeSlider.maximumValue = 60.0; // 最大值 60
@@ -196,13 +182,11 @@
     [_buttonSizeSlider addTarget:self action:@selector(buttonSizeSliderChanged:) forControlEvents:UIControlEventValueChanged];
     [sizeContainer addSubview:_buttonSizeSlider];
     
-    // 按钮容器视图 - 调整位置
     UIView *buttonContainer = [[UIView alloc] init];
     buttonContainer.frame = CGRectMake(20, sizeContainer.frame.origin.y + sizeContainer.frame.size.height + 25,
                                      _contentView.bounds.size.width - 40, 50);
     [_contentView addSubview:buttonContainer];
     
-    // 取消按钮 - 现代扁平化设计
     _cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_cancelButton setTitle:@"取消" forState:UIControlStateNormal];
     [_cancelButton setTitleColor:[UIColor colorWithWhite:0.9 alpha:0.9] forState:UIControlStateNormal];
@@ -213,7 +197,6 @@
     [_cancelButton addTarget:self action:@selector(cancelButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [buttonContainer addSubview:_cancelButton];
     
-    // 保存按钮 - 醒目的渐变效果
     _saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [_saveButton setTitle:@"保存" forState:UIControlStateNormal];
     [_saveButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
@@ -238,7 +221,7 @@
     [_saveButton addTarget:self action:@selector(saveButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [buttonContainer addSubview:_saveButton];
     
-    // 添加作者信息 - 更精致的版权信息
+
     UILabel *authorLabel = [[UILabel alloc] init];
     authorLabel.text = @"作者: 维他入我心 | Telegram: @vita_app";
     authorLabel.font = [UIFont systemFontOfSize:11];

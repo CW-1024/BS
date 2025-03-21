@@ -7,13 +7,11 @@
 @class AWEAwemePlayVideoViewController; 
 @class DUXToast;
 
-// 添加函数原型声明
 void showToast(NSString *text);
 
 // 完善AWEPlayInteractionViewController类定义，包括所有需要的属性和方法
 @interface AWEPlayInteractionViewController : UIViewController
 @property (nonatomic, strong, readonly) UIView *view; // 修改为readonly，因为它是从UIViewController继承的
-// 添加必要的方法声明
 - (void)setVideoControllerPlaybackRate:(float)rate; // 添加播放速率设置方法
 @end
 
@@ -151,21 +149,15 @@ void showToast(NSString *text);
         // 保存原始锁定状态
         self.originalLockState = self.isLocked;
         
-        // 第一阶段定时器 - 0.5秒后切换锁定状态
-        self.firstStageTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 
+        // 第一阶段定时器
+        self.firstStageTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
                                                                target:self 
                                                              selector:@selector(firstStageLongPress) 
                                                              userInfo:nil 
                                                               repeats:NO];
         [[NSRunLoop mainRunLoop] addTimer:self.firstStageTimer forMode:NSRunLoopCommonModes];
         
-        // 第二阶段定时器 - 1.0秒后(0.5+0.5)显示设置弹窗并恢复原始锁定状态
-        self.secondStageTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
-                                                                target:self 
-                                                              selector:@selector(secondStageLongPress) 
-                                                              userInfo:nil 
-                                                               repeats:NO];
-        [[NSRunLoop mainRunLoop] addTimer:self.secondStageTimer forMode:NSRunLoopCommonModes];
+        // 不在这里设置第二阶段计时器，而是在第一阶段计时器的回调中设置
     } else if (gesture.state == UIGestureRecognizerStateEnded || 
                gesture.state == UIGestureRecognizerStateCancelled || 
                gesture.state == UIGestureRecognizerStateFailed) {
@@ -202,13 +194,19 @@ void showToast(NSString *text);
         [generator impactOccurred];
     }
     
-    // 设置定时器在1秒后重置标记
-    NSTimer *resetTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 
+    NSTimer *resetTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
                                     target:self 
                                   selector:@selector(resetToggleLockFlag) 
                                   userInfo:nil 
                                    repeats:NO];
     [[NSRunLoop mainRunLoop] addTimer:resetTimer forMode:NSRunLoopCommonModes];
+    
+    self.secondStageTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                            target:self 
+                                                          selector:@selector(secondStageLongPress) 
+                                                          userInfo:nil 
+                                                           repeats:NO];
+    [[NSRunLoop mainRunLoop] addTimer:self.secondStageTimer forMode:NSRunLoopCommonModes];
 }
 
 - (void)secondStageLongPress {
