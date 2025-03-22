@@ -285,7 +285,10 @@
 #pragma mark - Gesture Handlers
 
 - (void)handleBackgroundTap:(UITapGestureRecognizer *)recognizer {
-    [self dismissViewControllerAnimated:YES completion:nil];
+    CGPoint tapLocation = [recognizer locationInView:self.view];
+    if (!CGRectContainsPoint(self.contentView.frame, tapLocation)) {
+        [self dismissViewControllerAnimated:YES completion:nil];
+    }
 }
 
 - (void)handlePanGesture:(UIPanGestureRecognizer *)recognizer {
